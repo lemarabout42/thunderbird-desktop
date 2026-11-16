@@ -31,6 +31,13 @@ if CONFIG["OS_ARCH"] == "WINNT":
     RCINCLUDE = "splash.rc"
     DEFINES["MOZ_THUNDERBIRD"] = True
 
+    if CONFIG["MOZ_THUNDERBIRD_HELLO_LOCK"]:
+        SOURCES += ["WindowsHello.cpp"]
+        OS_LIBS += ["bcrypt", "ncrypt"]
+        # Keep crypto providers out of the executable's initial imports, before
+        # the parent process has installed the Mozilla DLL blocklist.
+        DELAYLOAD_DLLS += ["bcrypt.dll", "ncrypt.dll"]
+
     OS_LIBS += [
         "advapi32",
         "shell32",

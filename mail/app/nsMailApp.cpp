@@ -32,6 +32,10 @@
 #  include "mozilla/WindowsDllBlocklist.h"
 #  include "mozilla/WindowsDpiInitialization.h"
 
+#  ifdef MOZ_THUNDERBIRD_HELLO_LOCK
+#    include "WindowsHello.h"
+#  endif
+
 #  define XRE_WANT_ENVIRON
 #  include "nsWindowsWMain.cpp"
 
@@ -422,6 +426,18 @@ int main(int argc, char* argv[], char* envp[]) {
   // it's now parent-only, as child processes either don't need it, or by
   // the time they do the sandbox already guarantees PreferSystem32Images.
   ::LoadLibraryExW(L"cryptbase.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+
+#  ifdef MOZ_THUNDERBIRD_HELLO_LOCK
+  // Content processes have already returned above. Authenticate every parent
+  // launch before XPCOM, command-line handlers, or a profile can be opened.
+  // This includes -app, -xpcshell, safe mode, and alternate profile arguments.
+  const auto helloResult = thunderbird::hello::AuthenticateStartup();
+  if (!helloResult.Succeeded()) {
+    Output("Thunderbird remains locked. Windows Hello was canceled or is "
+           "unavailable. Check your Windows sign-in options and try again.");
+    return 1;
+  }
+#  endif
 #endif
 
   nsresult rv = InitXPCOMGlue(LibLoadingStrategy::NoReadAhead);
