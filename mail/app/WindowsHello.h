@@ -7,6 +7,11 @@
 
 #include <windows.h>
 
+#include <array>
+#include <vector>
+
+#include "hello/EncryptedBlob.h"
+
 namespace thunderbird::hello {
 
 struct Result {
@@ -18,6 +23,17 @@ struct Result {
 // Runs before XPCOM/profile startup, in the parent process only. Cancellation,
 // unsupported providers, and policy failures all deny startup.
 Result AuthenticateStartup();
+
+using VaultId = std::array<BYTE, 16>;
+
+// A vault protector is separate from the replaceable startup signing key.
+// Creation never overwrites a persisted key. Unlock never creates a missing
+// key. The ciphertext is signed to prevent substitution through public-key
+// encryption; its signature is checked before every private decryption.
+Result CreateVaultProtector(const VaultId& id, const vault::SecretKey& secret,
+                            std::vector<BYTE>& wrapped);
+Result UnlockVaultSecret(const VaultId& id, const std::vector<BYTE>& wrapped,
+                         vault::SecretKey& secret, bool silentProbe = false);
 
 }  // namespace thunderbird::hello
 

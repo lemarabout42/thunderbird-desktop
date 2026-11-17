@@ -33,7 +33,7 @@
 #  include "mozilla/WindowsDpiInitialization.h"
 
 #  ifdef MOZ_THUNDERBIRD_HELLO_LOCK
-#    include "WindowsHello.h"
+#    include "hello/ProfileVault.h"
 #  endif
 
 #  define XRE_WANT_ENVIRON
@@ -428,13 +428,33 @@ int main(int argc, char* argv[], char* envp[]) {
   ::LoadLibraryExW(L"cryptbase.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
 
 #  ifdef MOZ_THUNDERBIRD_HELLO_LOCK
-  // Content processes have already returned above. Authenticate every parent
-  // launch before XPCOM, command-line handlers, or a profile can be opened.
-  // This includes -app, -xpcshell, safe mode, and alternate profile arguments.
-  const auto helloResult = thunderbird::hello::AuthenticateStartup();
-  if (!helloResult.Succeeded()) {
-    Output("Thunderbird remains locked. Windows Hello was canceled or is "
-           "unavailable. Check your Windows sign-in options and try again.");
+  for (int i = 1; i < argc; ++i) {
+    if (thunderbird::vault::IsProfileOverride(argv[i])) {
+      Output("Cette version de test utilise uniquement son profil chiffré "
+             "séparé. Les options de profil et d'application externe ne "
+             "sont pas disponibles.");
+      return 1;
+    }
+  }
+  // Child processes have returned above. The parent obtains the real storage
+  // secret through Hello, mounts the vault, and selects that profile before
+  // XPCOM or any command-line handler can access mail. No plaintext fallback.
+  thunderbird::vault::ProfileVaultSession profileVault;
+  const auto helloResult = profileVault.Open();
+  if (!helloResult.Succeeded() || !profileVault.PrepareArguments(argc, argv)) {
+    if (helloResult.status == ERROR_SERVICE_DOES_NOT_EXIST) {
+      Output("Le coffre nécessite le pilote Dokan fourni avec le paquet de "
+             "test. Installez vault-runtime/Dokan_x64.msi puis relancez "
+             "Thunderbird.");
+    } else if (helloResult.status == ERROR_ALREADY_ASSIGNED) {
+      Output("Le lecteur Z: est déjà occupé. Libérez-le avant de lancer ce "
+             "profil de test chiffré.");
+    } else if (helloResult.status != NTE_USER_CANCELLED &&
+               helloResult.status != ERROR_CANCELLED) {
+      Output("Le coffre n'a pas pu être ouvert. Vérifiez Windows Hello, les "
+             "composants du paquet de test et qu'aucune autre instance du "
+             "coffre n'est ouverte. Aucun profil en clair ne sera utilisé.");
+    }
     return 1;
   }
 #  endif
@@ -465,6 +485,11 @@ int main(int argc, char* argv[], char* envp[]) {
 #endif
 
   gBootstrap.reset();
+
+#if defined(XP_WIN) && defined(MOZ_THUNDERBIRD_HELLO_LOCK)
+  // Release Gecko and all profile handles before withdrawing the filesystem.
+  profileVault.Close();
+#endif
 
   return result;
 }

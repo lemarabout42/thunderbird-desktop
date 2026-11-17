@@ -32,11 +32,20 @@ if CONFIG["OS_ARCH"] == "WINNT":
     DEFINES["MOZ_THUNDERBIRD"] = True
 
     if CONFIG["MOZ_THUNDERBIRD_HELLO_LOCK"]:
-        SOURCES += ["WindowsHello.cpp"]
-        OS_LIBS += ["bcrypt", "ncrypt"]
+        SOURCES += [
+            "hello/EncryptedBlob.cpp",
+            "hello/ProfileVault.cpp",
+            "hello/RecoveryUI.cpp",
+            "hello/VaultSupport.cpp",
+            "WindowsHello.cpp",
+        ]
+        OS_LIBS += ["bcrypt", "gdi32", "ncrypt", "ole32", "uuid"]
+        if not CONFIG["MOZ_SANDBOX"]:
+            OS_LIBS += ["user32"]
+            DELAYLOAD_DLLS += ["user32.dll"]
         # Keep crypto providers out of the executable's initial imports, before
         # the parent process has installed the Mozilla DLL blocklist.
-        DELAYLOAD_DLLS += ["bcrypt.dll", "ncrypt.dll"]
+        DELAYLOAD_DLLS += ["bcrypt.dll", "gdi32.dll", "ncrypt.dll", "ole32.dll"]
 
     OS_LIBS += [
         "advapi32",

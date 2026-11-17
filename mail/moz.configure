@@ -8,7 +8,7 @@ set_define("MOZ_THUNDERBIRD", True)
 with only_when(target_is_windows):
     option(
         "--disable-windows-hello-lock",
-        help="Build without the experimental Windows Hello startup lock",
+        help="Build without the experimental Windows Hello encrypted profile",
     )
 
     @depends("--enable-windows-hello-lock")

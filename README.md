@@ -1,9 +1,10 @@
 # Thunderbird
 
-Ce fork expérimente le déverrouillage par Windows Hello et prépare le chiffrement
-du profil local. Le verrou au démarrage et le prototype AES-GCM sont décrits dans
-[la documentation du fork](docs/windows-hello/README.md). **Le stockage des mails
-n'est pas encore chiffré par ce prototype.**
+Ce fork Windows expérimental intègre un profil de test complet dans un coffre
+chiffré ouvert par Windows Hello. Le fonctionnement, les essais effectués et les
+limites sont décrits dans [la documentation du fork](docs/windows-hello/README.md).
+La compilation complète et sa validation restent en cours ; aucun profil
+personnel n'est migré automatiquement.
 
 Thunderbird is a powerful and customizable open source email client with many users. It is based on the same platform that Firefox uses.
 
