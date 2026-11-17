@@ -7,6 +7,7 @@
 
 import argparse
 import ctypes
+import json
 import os
 import subprocess
 import time
@@ -19,6 +20,8 @@ def main():
     parser.add_argument("--runtime", type=Path, required=True)
     parser.add_argument("--test-root", type=Path, required=True)
     parser.add_argument("--test-recovery-fixture", type=Path, required=True)
+    parser.add_argument("--engine-only", action="store_true",
+                        help="Kill the owned filesystem engine and allow its parent to close normally")
     args = parser.parse_args()
     if os.name != "nt" or not args.test_root.name.startswith("TestVault-"):
         parser.error("Requires Windows and an explicit TestVault-* dummy root")
@@ -47,14 +50,47 @@ def main():
             time.sleep(0.1)
         if not mounted():
             raise RuntimeError("Ready marker exists, but Z: is absent")
-        process.kill()
-        process.wait(timeout=10)
+        if args.engine_only:
+            command = (
+                "Get-CimInstance Win32_Process -Filter "
+                f'"Name=\'cppcryptfs.exe\' AND ParentProcessId={process.pid}" '
+                "| Select-Object -ExpandProperty ProcessId | ConvertTo-Json -Compress"
+            )
+            query = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                capture_output=True, text=True, check=True,
+            )
+            pid = json.loads(query.stdout)
+            if not isinstance(pid, int):
+                raise RuntimeError("Could not identify exactly one owned engine")
+            kernel = ctypes.windll.kernel32
+            kernel.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+            kernel.OpenProcess.restype = ctypes.c_void_p
+            kernel.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+            kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+            handle = kernel.OpenProcess(0x00100001, False, pid)
+            if not handle:
+                raise ctypes.WinError()
+            try:
+                if not kernel.TerminateProcess(handle, 77):
+                    raise ctypes.WinError()
+            finally:
+                kernel.CloseHandle(handle)
+        else:
+            process.kill()
+            process.wait(timeout=10)
         deadline = time.monotonic() + 20
         while mounted() and time.monotonic() < deadline:
             time.sleep(0.1)
         if mounted():
             raise RuntimeError("Z: remained mounted after its owner was killed")
-        print("Owned parent killed; its encrypted drive was withdrawn.")
+        if args.engine_only:
+            if process.wait(timeout=40) != 0:
+                raise RuntimeError("Parent failed to close after engine withdrawal")
+            print("Owned engine killed; drive withdrawn; parent closed normally.")
+        else:
+            print("Owned parent killed; its encrypted drive was withdrawn.")
     finally:
         if process.poll() is None:
             process.kill()

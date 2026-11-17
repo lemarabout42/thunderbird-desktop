@@ -165,6 +165,8 @@ Validation effectuée au 17 novembre 2026 :
   scrypt N=131072.
 - Arrêt brutal du parent natif : retrait automatique du lecteur chiffré.
   Le test ne termine que le processus factice qu'il a lui-même créé.
+- Arrêt brutal du moteur de fichiers seul : retrait du lecteur puis fermeture
+  normale du parent, sans demande répétée de fermer un lecteur déjà disparu.
 - Récupération interactive d'un nouveau coffre factice : conservation et
   confirmation du code, perte simulée de `hello.key`, récupération des messages
   et de SQLite, conservation de l'identité du coffre, nouveau protecteur, puis

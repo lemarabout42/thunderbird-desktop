@@ -129,7 +129,8 @@ ProfileVaultSession::~ProfileVaultSession() {
   // Normal shutdown calls Close after Gecko has released all profile files.
   // If startup fails or the process crashes, closing the job terminates only
   // our own engine; Dokan withdraws its mount when that process exits.
-  if (mMounted)
+  if (mMounted && mEngine.value &&
+      WaitForSingleObject(mEngine.value, 0) == WAIT_TIMEOUT)
     RunCommand(mRuntime + L"\\cppcryptfsctl.exe", {L"--unmount=" + mDrive},
                nullptr, 10000);
 }
@@ -359,9 +360,17 @@ bool ProfileVaultSession::PrepareArguments(int& argc, char**& argv) {
 
 void ProfileVaultSession::Close() {
   while (mMounted) {
-    const DWORD result = RunCommand(mRuntime + L"\\cppcryptfsctl.exe",
-                                    {L"--unmount=" + mDrive}, nullptr, 10000);
-    if (!result && !(GetLogicalDrives() & (DWORD{1} << (mDrive[0] - L'A')))) {
+    const DWORD mask = DWORD{1} << (mDrive[0] - L'A');
+    DWORD drives = GetLogicalDrives();
+    if (drives && !(drives & mask)) {
+      mMounted = false;
+      break;
+    }
+    if (mEngine.value && WaitForSingleObject(mEngine.value, 0) == WAIT_TIMEOUT)
+      RunCommand(mRuntime + L"\\cppcryptfsctl.exe", {L"--unmount=" + mDrive},
+                 nullptr, 10000);
+    drives = GetLogicalDrives();
+    if (drives && !(drives & mask)) {
       mMounted = false;
       break;
     }
