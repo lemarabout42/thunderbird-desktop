@@ -191,7 +191,8 @@ bool VerifySha256(const std::wstring& path, const char* expected) {
   std::array<BYTE, 65536> buffer{};
   DWORD read = 0;
   while (ok) {
-    if (!ReadFile(file.value, buffer.data(), buffer.size(), &read, nullptr)) {
+    if (!ReadFile(file.value, buffer.data(), static_cast<DWORD>(buffer.size()),
+                  &read, nullptr)) {
       ok = false;
       break;
     }
@@ -199,7 +200,9 @@ bool VerifySha256(const std::wstring& path, const char* expected) {
     ok = BCryptHashData(hash, buffer.data(), read, 0) == 0;
   }
   std::array<BYTE, 32> digest{};
-  if (ok) ok = BCryptFinishHash(hash, digest.data(), digest.size(), 0) == 0;
+  if (ok)
+    ok = BCryptFinishHash(hash, digest.data(),
+                          static_cast<ULONG>(digest.size()), 0) == 0;
   if (hash) BCryptDestroyHash(hash);
   BCryptCloseAlgorithmProvider(algorithm, 0);
   return ok && Hex(digest.data(), digest.size()) == expected;
@@ -295,8 +298,9 @@ DWORD RunCommand(const std::wstring& executable,
     }
     password.back() = '\n';
     DWORD written = 0;
-    const BOOL sent = WriteFile(inputWrite.value, password.data(),
-                                password.size(), &written, nullptr);
+    const BOOL sent =
+        WriteFile(inputWrite.value, password.data(),
+                  static_cast<DWORD>(password.size()), &written, nullptr);
     SecureZeroMemory(password.data(), password.size());
     if (!sent || written != password.size()) error = ERROR_WRITE_FAULT;
   }

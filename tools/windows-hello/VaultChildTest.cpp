@@ -18,8 +18,8 @@ int wmain(int argc, wchar_t* argv[]) {
     return 3;
   std::array<char, 65> input{};
   DWORD read = 0;
-  if (!ReadFile(GetStdHandle(STD_INPUT_HANDLE), input.data(), input.size(),
-                &read, nullptr) ||
+  if (!ReadFile(GetStdHandle(STD_INPUT_HANDLE), input.data(),
+                static_cast<DWORD>(input.size()), &read, nullptr) ||
       read != input.size() || input.back() != '\n')
     return 4;
   for (size_t i = 0; i < 64; i += 2) {

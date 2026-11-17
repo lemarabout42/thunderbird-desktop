@@ -32,8 +32,10 @@ bool ExerciseArguments(thunderbird::vault::ProfileVaultSession& session) {
         std::pair{L"XRE_PROFILE_LOCAL_PATH", L"Z:\\Profile"},
         std::pair{L"TEMP", L"Z:\\Temp"}, std::pair{L"TMP", L"Z:\\Temp"}}) {
     std::array<wchar_t, 128> value{};
-    const wchar_t* crt = _wgetenv(entry.first);
-    if (!crt || wcscmp(crt, entry.second) != 0 ||
+    std::array<wchar_t, 128> crt{};
+    size_t required = 0;
+    if (_wgetenv_s(&required, crt.data(), crt.size(), entry.first) != 0 ||
+        !required || wcscmp(crt.data(), entry.second) != 0 ||
         !GetEnvironmentVariableW(entry.first, value.data(),
                                  static_cast<DWORD>(value.size())) ||
         wcscmp(value.data(), entry.second) != 0)
@@ -42,7 +44,9 @@ bool ExerciseArguments(thunderbird::vault::ProfileVaultSession& session) {
   for (const wchar_t* name :
        {L"XUL_APP_FILE", L"SELECTABLE_PROFILE_RESET_PATH"}) {
     wchar_t value[2]{};
-    if (GetEnvironmentVariableW(name, value, 2) != 0 || _wgetenv(name))
+    size_t required = 0;
+    if (GetEnvironmentVariableW(name, value, 2) != 0 ||
+        _wgetenv_s(&required, nullptr, 0, name) != 0 || required)
       return false;
   }
   return true;

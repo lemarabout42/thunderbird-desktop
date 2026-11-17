@@ -58,9 +58,11 @@ bool DriverInstalled() {
 bool OutsideRoot(const std::wstring& file, const std::wstring& root) {
   std::array<wchar_t, 32768> fullFile{}, fullRoot{};
   const DWORD a =
-      GetFullPathNameW(file.c_str(), fullFile.size(), fullFile.data(), nullptr);
+      GetFullPathNameW(file.c_str(), static_cast<DWORD>(fullFile.size()),
+                       fullFile.data(), nullptr);
   const DWORD b =
-      GetFullPathNameW(root.c_str(), fullRoot.size(), fullRoot.data(), nullptr);
+      GetFullPathNameW(root.c_str(), static_cast<DWORD>(fullRoot.size()),
+                       fullRoot.data(), nullptr);
   if (!a || !b || a >= fullFile.size() || b >= fullRoot.size()) return false;
   std::wstring prefix = fullRoot.data();
   if (prefix.back() != L'\\') prefix += L'\\';
@@ -86,7 +88,8 @@ bool ExportRecovery(const std::wstring& path, const std::wstring& root,
 
 std::wstring ExecutableDirectory() {
   std::array<wchar_t, 32768> path{};
-  const DWORD size = GetModuleFileNameW(nullptr, path.data(), path.size());
+  const DWORD size =
+      GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
   if (!size || size >= path.size()) return {};
   std::wstring result(path.data(), size);
   const auto slash = result.find_last_of(L"\\/");
@@ -345,7 +348,8 @@ bool ProfileVaultSession::PrepareArguments(int& argc, char**& argv) {
   mArguments.emplace_back("-no-remote");
   mArguments.emplace_back("-profile");
   // The mount/profile components are deliberately ASCII and stable for Gecko.
-  mArguments.emplace_back(mProfile.begin(), mProfile.end());
+  mArguments.emplace_back();
+  for (wchar_t c : mProfile) mArguments.back() += static_cast<char>(c);
   for (auto& argument : mArguments) mPointers.push_back(argument.data());
   argc = static_cast<int>(mPointers.size());
   mPointers.push_back(nullptr);

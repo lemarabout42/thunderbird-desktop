@@ -336,9 +336,9 @@ Result CreateVaultProtector(const VaultId& id, const vault::SecretKey& secret,
   if (!result.Succeeded()) return result;
   std::array<BYTE, 1024> publicBlob{};
   DWORD size = 0;
-  auto status = NCryptExportKey(key.value, 0, BCRYPT_RSAPUBLIC_BLOB, nullptr,
-                                publicBlob.data(), publicBlob.size(), &size,
-                                NCRYPT_SILENT_FLAG);
+  auto status = NCryptExportKey(
+      key.value, 0, BCRYPT_RSAPUBLIC_BLOB, nullptr, publicBlob.data(),
+      static_cast<DWORD>(publicBlob.size()), &size, NCRYPT_SILENT_FLAG);
   if (status != 0 || size > publicBlob.size() ||
       size < sizeof(BCRYPT_RSAKEY_BLOB))
     return {status ? status : NTE_BAD_DATA, "Export vault public key"};
@@ -381,9 +381,9 @@ Result CreateVaultProtector(const VaultId& id, const vault::SecretKey& secret,
   wrapped.resize(512);
   DWORD signedSize = 0;
   BCRYPT_PKCS1_PADDING_INFO padding{BCRYPT_SHA256_ALGORITHM};
-  status = NCryptSignHash(key.value, &padding, digest.data(), digest.size(),
-                          wrapped.data() + 256, 256, &signedSize,
-                          NCRYPT_PAD_PKCS1_FLAG);
+  status = NCryptSignHash(
+      key.value, &padding, digest.data(), static_cast<DWORD>(digest.size()),
+      wrapped.data() + 256, 256, &signedSize, NCRYPT_PAD_PKCS1_FLAG);
   SecureZeroMemory(digest.data(), digest.size());
   if (status == 0 && signedSize != 256) status = NTE_BAD_SIGNATURE;
   if (status != 0) wrapped.clear();
@@ -418,7 +418,7 @@ Result UnlockVaultSecret(const VaultId& id, const std::vector<BYTE>& wrapped,
   DWORD written = 0;
   status = NCryptDecrypt(
       key.value, const_cast<PBYTE>(wrapped.data()), 256, nullptr,
-      plaintext.data(), plaintext.size(), &written,
+      plaintext.data(), static_cast<DWORD>(plaintext.size()), &written,
       NCRYPT_PAD_PKCS1_FLAG | (silentProbe ? NCRYPT_SILENT_FLAG : 0));
   if (status == 0 && (written != 32 || !secret.Import(plaintext.data(), 32)))
     status = NTE_BAD_DATA;

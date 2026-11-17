@@ -91,7 +91,8 @@ int main() {
   appended.push_back(0);
   CHECK(Decrypt(key, appended, context, plaintext) == Error::InvalidFormat);
   auto invalidLength = encrypted;
-  std::fill(invalidLength.begin() + 20, invalidLength.begin() + 28, 0xFF);
+  std::fill(invalidLength.begin() + 20, invalidLength.begin() + 28,
+            uint8_t{0xFF});
   CHECK(Decrypt(key, invalidLength, context, plaintext) ==
         Error::InvalidFormat);
 

@@ -147,6 +147,8 @@ annoncés avant exécution.
 
 Validation effectuée au 17 novembre 2026 :
 
+- Compilation et suite native réussies avec MSVC (`/W4 /WX`) et Zig C++17
+  (`-Wall -Wextra -Werror`), avec le vrai SDK Windows pour la variante MSVC.
 - 28 scénarios du verrou initial avec frontière Windows simulée.
 - AES-GCM du prototype : vecteur indépendant, altérations, troncatures,
   mauvaises clés/contextes, bornes et effacement, avec le vrai CNG Windows.

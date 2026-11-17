@@ -15,7 +15,7 @@ int main(int argc, char* argv[]) {
     thunderbird::vault::SecretKey restored;
     std::vector<BYTE> wrapped;
     if (!original.Generate() ||
-        BCryptGenRandom(nullptr, id.data(), id.size(),
+        BCryptGenRandom(nullptr, id.data(), static_cast<ULONG>(id.size()),
                         BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0)
       return 1;
     auto result =

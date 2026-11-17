@@ -60,10 +60,10 @@ try {
         if ($ZigPath) {
             $taskUnicode = @()
             if ($taskTest.Unicode) { $taskUnicode = @('-municode') }
-            & $ZigPath c++ -std=c++17 -Wall -Wextra -Werror @taskUnicode @taskSources -lbcrypt -lncrypt -ladvapi32 -lshell32 -lgdi32 -lole32 -luuid -o $taskExe
+            & $ZigPath c++ -std=c++17 -Wall -Wextra -Werror @taskUnicode @taskSources -lbcrypt -lncrypt -ladvapi32 -lshell32 -luser32 -lgdi32 -lole32 -luuid -o $taskExe
         } else {
             # Run from a Visual Studio Developer PowerShell. No Gecko SDK needed.
-            & cl.exe /nologo /std:c++17 /utf-8 /EHsc /W4 /WX @taskSources /link bcrypt.lib ncrypt.lib advapi32.lib shell32.lib gdi32.lib ole32.lib uuid.lib "/OUT:$taskExe"
+            & cl.exe /nologo /std:c++17 /utf-8 /EHsc /W4 /WX @taskSources /link bcrypt.lib ncrypt.lib advapi32.lib shell32.lib user32.lib gdi32.lib ole32.lib uuid.lib "/OUT:$taskExe"
         }
         if ($LASTEXITCODE -ne 0) {
             throw "Native compilation failed: $($taskTest.Name)"
