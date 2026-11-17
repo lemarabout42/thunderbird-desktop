@@ -45,9 +45,9 @@ INT_PTR CALLBACK RecoveryProc(HWND window, UINT message, WPARAM wParam,
     const wchar_t* instruction =
         state->display ? L"Conservez ces 64 caractères sur papier ou dans un "
                          L"lieu sûr hors de ce PC. "
-                         L"Cette clé ouvre le coffre sans Windows Hello. Ne la "
-                         L"gardez pas uniquement "
-                         L"dans un fichier ou une capture d'écran sur ce PC. "
+                         L"Cette clé ouvre le coffre sans Windows Hello. Ne "
+                         L"gardez pas de copie en clair "
+                         L"ni de capture d'écran sur ce PC. "
                          L"Elle sera demandée "
                          L"à l'étape suivante pour vérifier votre copie."
         : state->confirmation

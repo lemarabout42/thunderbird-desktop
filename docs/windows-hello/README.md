@@ -26,6 +26,8 @@ indépendant du nouveau coffre.
 - Conserver les 64 caractères de récupération sur papier ou dans un lieu sûr
   hors de ce PC, puis les saisir pour vérifier la copie. Cette clé ouvre le
   coffre sans Hello. L'application ne l'enregistre pas automatiquement en clair.
+  Une copie en clair ou une capture de cette clé sur le même PC permettrait
+  de contourner la protection du coffre : n'en conserver aucune.
 - Les lancements suivants demandent Hello avant d'ouvrir le profil. Une
   annulation ferme le programme. Fermer Thunderbird retire le lecteur Z: ; si
   une application garde un fichier ouvert, la fermeture demande de le libérer.
