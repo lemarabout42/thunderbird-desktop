@@ -173,6 +173,9 @@ Validation effectuée au 17 novembre 2026 :
   environnements CRT et Win32, et les arguments fixent ce même profil.
 - Compilation complète Thunderbird et lancement de l'application : en cours,
   pas encore validés.
+- Configurations complètes avec et sans coffre : génération des deux backends
+  réussie. `config.status` et `backend.mk` confirment que la définition et les
+  sources Hello sont présentes dans le premier cas et absentes dans le second.
 
 `VaultProbe` peut écrire une clé de récupération de **profil factice** dans un
 fichier explicitement fourni par son opérateur, uniquement pour les essais
@@ -192,5 +195,6 @@ Le `KeyError` allégué pour `CONFIG["MOZ_THUNDERBIRD_HELLO_LOCK"]` désactivé 
 correspond pas à l'implémentation Mozilla : `ConfigEnvironment.substs` est
 accessible au contexte via `ReadOnlyKeyedDefaultDict(config.substs.get)` ; une
 clé absente retourne `None`. Ce comportement a été exécuté avec les classes
-réelles de la révision Gecko. Les configurations complètes activée/désactivée
-restent à exécuter avant de déclarer les deux builds validés.
+réelles de la révision Gecko, puis confirmé par la génération complète des deux
+configurations sur Windows. Cela ne vaut pas compilation complète des deux
+variantes : le build de la variante avec coffre reste en cours.

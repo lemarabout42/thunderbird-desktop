@@ -1,10 +1,9 @@
 # Thunderbird
 
-Ce fork Windows expérimental intègre un profil de test complet dans un coffre
-chiffré ouvert par Windows Hello. Le fonctionnement, les essais effectués et les
-limites sont décrits dans [la documentation du fork](docs/windows-hello/README.md).
-La compilation complète et sa validation restent en cours ; aucun profil
-personnel n'est migré automatiquement.
+This experimental Windows fork puts a complete test profile in an encrypted
+vault unlocked with Windows Hello. See the [fork documentation in French](docs/windows-hello/README.md)
+for behavior, validation and limitations. The full application build is still
+in progress; existing personal profiles are not migrated automatically.
 
 Thunderbird is a powerful and customizable open source email client with many users. It is based on the same platform that Firefox uses.
 

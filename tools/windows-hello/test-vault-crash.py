@@ -8,9 +8,9 @@
 import argparse
 import ctypes
 import os
-from pathlib import Path
 import subprocess
 import time
+from pathlib import Path
 
 
 def main():

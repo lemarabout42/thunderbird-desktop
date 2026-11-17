@@ -22,6 +22,8 @@ codespell:
         - comm/third_party/
         - comm/README.md
     exclude:
+        # This document is in French; codespell uses an English dictionary.
+        - comm/docs/windows-hello/README.md
         # Timezones have oddly spelled words that tend to confuse codespell
         - comm/calendar/locales/en-US/chrome/calendar/timezones.properties
         - comm/mailnews/extensions/fts3/fts3_porter.c
