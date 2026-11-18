@@ -147,7 +147,7 @@ aucun profil personnel et ne demandent aucune empreinte. Les outils manuels
 `HelloProbe` et `VaultProbe` ouvrent des demandes Windows Hello et doivent être
 annoncés avant exécution.
 
-Validation effectuée au 17 novembre 2026 :
+Validation effectuée au 18 novembre 2026 :
 
 - Compilation et suite native réussies avec MSVC (`/W4 /WX`) et Zig C++17
   (`-Wall -Wextra -Werror`), avec le vrai SDK Windows pour la variante MSVC.
@@ -175,8 +175,25 @@ Validation effectuée au 17 novembre 2026 :
   variables de réinitialisation (y compris en minuscules) sont supprimées,
   le profil/cache et les répertoires temporaires restent sur Z: dans les
   environnements CRT et Win32, et les arguments fixent ce même profil.
-- Compilation complète Thunderbird et lancement de l'application : en cours,
-  pas encore validés.
+- Compilation complète Thunderbird 162.0a1 Windows x64 et passe finale
+  réussies à la révision `85581e6a2f7ed55ce13f85a6fbae1ce69f11504f`,
+  avec Gecko `d7161e35da7704cff60e48ee86fb7747ffcc93c7`.
+  Lint du patch et de la correction finale : aucune erreur ni avertissement.
+- Application complète : premier lancement avec Windows Hello, création et
+  confirmation de récupération par l'utilisateur, interface affichée. Le
+  profil, le cache et les chemins de stockage des comptes observés sont dans
+  le lecteur chiffré. Fermeture normale : processus terminés et lecteur retiré.
+- Cache Hello chaud : un autre processus a tenté l'opération privée sans
+  imposer lui-même un nouveau geste, immédiatement après le déverrouillage
+  de l'application. Déchiffrement silencieux refusé, y compris après avoir
+  relâché la propriété de geste sur son propre handle ; modification du cache
+  du protecteur refusée. Aucun secret ni code de récupération dans les logs.
+- Après fermeture de l'application : les fichiers chiffrés ne contiennent ni
+  le marqueur ni le nom du message factice connu (285 fichiers, 836617580 octets
+  parcourus, aucune erreur de lecture). Le contenu des messages personnels
+  n'a pas été consulté.
+- Lecture visuelle du message factice après réouverture et redémarrage interne
+  de l'application : restent à confirmer.
 - Configurations complètes avec et sans coffre : génération des deux backends
   réussie. `config.status` et `backend.mk` confirment que la définition et les
   sources Hello sont présentes dans le premier cas et absentes dans le second.
@@ -200,5 +217,6 @@ correspond pas à l'implémentation Mozilla : `ConfigEnvironment.substs` est
 accessible au contexte via `ReadOnlyKeyedDefaultDict(config.substs.get)` ; une
 clé absente retourne `None`. Ce comportement a été exécuté avec les classes
 réelles de la révision Gecko, puis confirmé par la génération complète des deux
-configurations sur Windows. Cela ne vaut pas compilation complète des deux
-variantes : le build de la variante avec coffre reste en cours.
+configurations sur Windows. La compilation complète de la variante avec
+coffre est réussie. La variante sans coffre a été configurée, pas compilée
+intégralement.

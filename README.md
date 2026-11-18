@@ -2,8 +2,9 @@
 
 This experimental Windows fork puts a complete test profile in an encrypted
 vault unlocked with Windows Hello. See the [fork documentation in French](docs/windows-hello/README.md)
-for behavior, validation and limitations. The full application build is still
-in progress; existing personal profiles are not migrated automatically.
+for behavior, validation and limitations. A complete Windows test build has
+been compiled and launched; existing personal profiles are not migrated
+automatically.
 
 Thunderbird is a powerful and customizable open source email client with many users. It is based on the same platform that Firefox uses.
 
