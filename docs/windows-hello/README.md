@@ -192,8 +192,10 @@ Validation effectuée au 18 novembre 2026 :
   le marqueur ni le nom du message factice connu (285 fichiers, 836617580 octets
   parcourus, aucune erreur de lecture). Le contenu des messages personnels
   n'a pas été consulté.
-- Lecture visuelle du message factice après réouverture et redémarrage interne
-  de l'application : restent à confirmer.
+- Réouverture depuis le paquet extrait : nouvelle validation Windows Hello,
+  retour du lecteur, persistance du message factice de la première session
+  et lecture visuelle confirmée par l'utilisateur. Le cycle fermeture puis
+  réouverture est validé. Le redémarrage interne de l'application reste non testé.
 - Configurations complètes avec et sans coffre : génération des deux backends
   réussie. `config.status` et `backend.mk` confirment que la définition et les
   sources Hello sont présentes dans le premier cas et absentes dans le second.
