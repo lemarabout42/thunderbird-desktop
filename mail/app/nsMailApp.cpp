@@ -442,7 +442,8 @@ int main(int argc, char* argv[], char* envp[]) {
   // XPCOM or any command-line handler can access mail. No plaintext fallback.
   thunderbird::vault::ProfileVaultSession profileVault;
   const auto helloResult = profileVault.Open();
-  if (!helloResult.Succeeded() || !profileVault.PrepareArguments(argc, argv)) {
+  if (!helloResult.Succeeded() || !profileVault.PrepareArguments(argc, argv) ||
+      !profileVault.WatchEngine()) {
     if (helloResult.status == ERROR_SERVICE_DOES_NOT_EXIST) {
       Output(
           "Le coffre nécessite le pilote Dokan fourni avec le paquet de "

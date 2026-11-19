@@ -689,8 +689,9 @@ var gGeneralPane = {
       "useSystemNotificationAlert"
     );
     if (systemNotification) {
-      systemNotification.disabled = !Preferences.get("mail.biff.show_alert")
-        .value;
+      systemNotification.disabled =
+        !Preferences.get("mail.biff.show_alert").value ||
+        Preferences.get("mail.biff.use_system_alert").locked;
     }
   },
 

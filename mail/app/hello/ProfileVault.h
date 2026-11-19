@@ -22,19 +22,26 @@ class ProfileVaultSession {
                      const std::wstring& dataRoot = L"",
                      const std::wstring& recoveryExport = L"");
   bool PrepareArguments(int& argc, char**& argv);
+  bool WatchEngine() { return mMounted && mEngineWatch.Start(mEngine.value); }
   void Close();
   const std::wstring& ProfilePath() const { return mProfile; }
   const std::wstring& VaultPath() const { return mVault; }
 
  private:
+  hello::Result OpenLocked(const std::wstring& root,
+                           const std::wstring& recoveryExport);
   hello::Result Create(const std::wstring& root,
                        const std::wstring& recoveryExport);
-  hello::Result Recover(Envelope& envelope, SecretKey& secret,
-                        bool knownIdentity);
+  hello::Result Mount(const std::wstring& data, const SecretKey& secret);
+  bool OwnsMount() const;
+  hello::Result Unmount();
+  void StopEngine();
   bool InstallEnvironment();
   std::wstring mRuntime;
+  std::vector<Handle> mRuntimePins;
   std::wstring mVault;
-  std::wstring mDrive;
+  const std::wstring mDrive = L"Z:";
+  std::wstring mDriveTarget;
   std::wstring mProfile;
   Handle mLock;
   Handle mJob;
@@ -42,6 +49,7 @@ class ProfileVaultSession {
   bool mMounted = false;
   std::vector<std::string> mArguments;
   std::vector<char*> mPointers;
+  EngineWatch mEngineWatch;
 };
 
 }  // namespace thunderbird::vault

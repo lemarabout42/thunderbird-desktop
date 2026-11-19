@@ -6,6 +6,9 @@ XPCSHELL_TESTS_MANIFESTS += [
     "unit/xpcshell.toml",
 ]
 
+if CONFIG["MOZ_THUNDERBIRD_HELLO_LOCK"]:
+    XPCSHELL_TESTS_MANIFESTS += ["unit/xpcshell-windows-hello.toml"]
+
 if CONFIG["MOZ_PANORAMA"]:
     XPCSHELL_TESTS_MANIFESTS += [
         "unit/xpcshell-panorama.toml"

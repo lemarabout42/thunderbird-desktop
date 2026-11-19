@@ -16,9 +16,114 @@
     }                                                                   \
   } while (false)
 
+namespace {
+using namespace thunderbird::vault;
+
+void CheckSharing(const std::wstring& path, DWORD access, bool allowed) {
+  Handle handle(
+      CreateFileW(path.c_str(), access,
+                  FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                  nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
+  if (allowed) {
+    CHECK(handle.value != INVALID_HANDLE_VALUE);
+  } else {
+    CHECK(handle.value == INVALID_HANDLE_VALUE);
+    CHECK(GetLastError() == ERROR_SHARING_VIOLATION);
+  }
+}
+
+void TestRuntimePins(const wchar_t* child) {
+  wchar_t parent[MAX_PATH]{};
+  CHECK(GetTempFileNameW(L".", L"pin", 0, parent));
+  CHECK(DeleteFileW(parent));
+  CHECK(CreateDirectoryW(parent, nullptr));
+  const std::wstring directory = std::wstring(parent) + L"\\runtime é";
+  CHECK(CreateDirectoryW(directory.c_str(), nullptr));
+  const std::wstring file = directory + L"\\fixture.bin";
+  const std::wstring executable = directory + L"\\child.exe";
+  constexpr BYTE contents[]{'a', 'b', 'c'};
+  constexpr char digest[] =
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+  CHECK(WriteNewFile(file, contents, sizeof(contents)));
+  CHECK(CopyFileW(child, executable.c_str(), TRUE));
+
+  std::wstring launchDirectory;
+  std::vector<Handle> pins;
+  CHECK(!PinVerifiedRuntime(directory, {}, launchDirectory, pins));
+  CHECK(!PinVerifiedRuntime(directory, {{L"fixture.bin", "wrong"}},
+                            launchDirectory, pins));
+  CHECK(!PinVerifiedRuntime(directory, {{L"..\\fixture.bin", digest}},
+                            launchDirectory, pins));
+  const std::wstring link = directory + L"\\link.bin";
+  if (CreateSymbolicLinkW(link.c_str(), L"fixture.bin",
+                          SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE)) {
+    CHECK(!PinVerifiedRuntime(directory, {{L"link.bin", digest}},
+                              launchDirectory, pins));
+    CHECK(DeleteFileW(link.c_str()));
+  } else {
+    const DWORD error = GetLastError();
+    CHECK(error == ERROR_PRIVILEGE_NOT_HELD ||
+          error == ERROR_INVALID_PARAMETER || error == ERROR_ACCESS_DENIED);
+  }
+  {
+    Handle writer(
+        CreateFileW(file.c_str(), GENERIC_WRITE,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                    nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
+    CHECK(writer.value != INVALID_HANDLE_VALUE);
+    CHECK(!PinVerifiedRuntime(directory, {{L"fixture.bin", digest}},
+                              launchDirectory, pins));
+  }
+
+  CHECK(PinVerifiedRuntime(directory, {{L"fixture.bin", digest}},
+                           launchDirectory, pins));
+  CHECK(launchDirectory.find(L"\\\\?\\GLOBALROOT\\Device\\") == 0);
+  CheckSharing(file, GENERIC_READ, true);
+  CheckSharing(file, GENERIC_WRITE, false);
+  CheckSharing(file, DELETE, false);
+  CheckSharing(directory, DELETE, false);
+  CheckSharing(parent, DELETE, false);
+  CHECK(RunCommand(launchDirectory + L"\\child.exe", {L"--info=valid"}) == 0);
+  pins.clear();
+  CheckSharing(file, GENERIC_WRITE | DELETE, true);
+  CheckSharing(directory, DELETE, true);
+  CheckSharing(parent, DELETE, true);
+  CHECK(DeleteFileW(executable.c_str()));
+  CHECK(DeleteFileW(file.c_str()));
+  CHECK(RemoveDirectoryW(directory.c_str()));
+  CHECK(RemoveDirectoryW(parent));
+}
+
+void TestEngineSession() {
+  const DWORD process = GetCurrentProcessId();
+  DWORD session = 0;
+  CHECK(ProcessIdToSessionId(process, &session));
+  CHECK(IsEngineInSession(L"CPPCRYPTFS.EXE", process, session));
+  CHECK(!IsEngineInSession(L"cppcryptfs.exe", process, session ^ 1));
+  CHECK(!IsEngineInSession(L"other.exe", process, session));
+}
+}  // namespace
+
 int wmain(int argc, wchar_t* argv[]) {
   using namespace thunderbird::vault;
   CHECK(argc == 2);
+  if (wcscmp(argv[1], L"--watch-exit") == 0) {
+    Handle signal(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+    EngineWatch watch;
+    CHECK(watch.Start(signal.value));
+    CHECK(SetEvent(signal.value));
+    Sleep(5000);
+    return 1;
+  }
+  Handle signal(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+  EngineWatch watch;
+  CHECK(watch.Start(signal.value));
+  watch.Stop();
+  CHECK(SetEvent(signal.value));
+  CHECK(!watch.Start(signal.value));
+  CHECK(RunCommand(argv[0], {L"--watch-exit"}) == ERROR_DEVICE_NOT_CONNECTED);
+  TestRuntimePins(argv[1]);
+  TestEngineSession();
   Envelope envelope;
   for (size_t i = 0; i < 16; ++i) {
     envelope.vaultId[i] = static_cast<BYTE>(i);
@@ -46,6 +151,8 @@ int wmain(int argc, wchar_t* argv[]) {
   std::array<BYTE, 32> fixture{};
   fixture.fill(0x5A);
   CHECK(key.Import(fixture.data(), fixture.size()));
+  CHECK(RunVerifiedMount(argv[1], L"unused", L"Z:", key, GetCurrentProcess()) ==
+        ERROR_INVALID_IMAGE_HASH);
   auto recovery = EncodeRecovery(envelope.vaultId, key);
   std::vector<BYTE> bytes(recovery.begin(), recovery.end());
   CHECK(DecodeRecovery(bytes, envelope.vaultId, recovered));
@@ -74,6 +181,10 @@ int wmain(int argc, wchar_t* argv[]) {
   for (const char* argument :
        {"-offline", "mailto:test@example.invalid", "-mail", ""})
     CHECK(!IsProfileOverride(argument));
+  CHECK(VerifyMountedPolicy(argv[1], L"protected"));
+  for (const wchar_t* policyFixture :
+       {L"plain-names", L"missing", L"conflict", L"oversized"})
+    CHECK(!VerifyMountedPolicy(argv[1], policyFixture));
   CHECK(
       RunCommand(argv[1],
                  {L"--pipe-test", L"quoted \"argument\" with trailing slash\\",

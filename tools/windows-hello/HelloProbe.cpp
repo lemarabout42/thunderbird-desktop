@@ -14,12 +14,13 @@ int main(int argc, char* argv[]) {
     thunderbird::vault::SecretKey original;
     thunderbird::vault::SecretKey restored;
     std::vector<BYTE> wrapped;
+    thunderbird::hello::PendingVaultProtector protector;
     if (!original.Generate() ||
         BCryptGenRandom(nullptr, id.data(), static_cast<ULONG>(id.size()),
                         BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0)
       return 1;
-    auto result =
-        thunderbird::hello::CreateVaultProtector(id, original, wrapped);
+    auto result = thunderbird::hello::CreateVaultProtector(id, original,
+                                                           wrapped, protector);
     std::printf("%s: 0x%08lX\n", result.operation,
                 static_cast<unsigned long>(result.status));
     if (!result.Succeeded()) return 1;

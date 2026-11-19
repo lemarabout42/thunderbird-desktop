@@ -5,6 +5,7 @@
 #include "RecoveryUI.h"
 #include "VaultSupport.h"
 
+#include <algorithm>
 #include <array>
 
 namespace thunderbird::vault {
@@ -58,17 +59,34 @@ INT_PTR CALLBACK RecoveryProc(HWND window, UINT message, WPARAM wParam,
               L"Le coffre sera vérifié avant toute modification de sa "
               L"protection Windows Hello.";
     Control(window, L"STATIC", instruction, 0, 12, 12, 306, 50);
-    const HWND edit = Control(window, L"EDIT", state->code.data(),
-                              WS_TABSTOP | ES_AUTOHSCROLL |
-                                  (state->display ? ES_READONLY : ES_PASSWORD),
-                              12, 66, 306, 20, kCode, WS_EX_CLIENTEDGE);
-    SendMessageW(edit, EM_SETLIMITTEXT, 64, 0);
-    Control(window, L"BUTTON",
-            state->display ? L"J'ai conservé la clé" : L"Vérifier",
-            WS_TABSTOP | BS_DEFPUSHBUTTON, 126, 98, 110, 22, IDOK);
+    HWND edit = nullptr;
+    if (state->display) {
+      // A native text label is readable by assistive technology and has no
+      // implicit Copy action that would retain the recovery key on this PC.
+      std::array<wchar_t, 67> lines{};
+      std::copy_n(state->code.begin(), 32, lines.begin());
+      lines[32] = L'\r';
+      lines[33] = L'\n';
+      std::copy_n(state->code.begin() + 32, 32, lines.begin() + 34);
+      const HWND label = Control(window, L"STATIC", lines.data(), SS_NOPREFIX,
+                                 12, 63, 306, 32, kCode);
+      SecureZeroMemory(lines.data(), sizeof(lines));
+      SendMessageW(label, WM_SETFONT,
+                   reinterpret_cast<WPARAM>(GetStockObject(ANSI_FIXED_FONT)),
+                   TRUE);
+    } else {
+      edit = Control(window, L"EDIT", L"",
+                     WS_TABSTOP | ES_AUTOHSCROLL | ES_PASSWORD, 12, 66, 306, 20,
+                     kCode, WS_EX_CLIENTEDGE);
+      SendMessageW(edit, EM_SETLIMITTEXT, 64, 0);
+    }
+    const HWND confirm =
+        Control(window, L"BUTTON",
+                state->display ? L"J'ai conservé la clé" : L"Vérifier",
+                WS_TABSTOP | BS_DEFPUSHBUTTON, 126, 98, 110, 22, IDOK);
     Control(window, L"BUTTON", L"Annuler", WS_TABSTOP, 244, 98, 74, 22,
             IDCANCEL);
-    SetFocus(edit);
+    SetFocus(state->display ? confirm : edit);
     return FALSE;
   }
   if (message == WM_CLOSE ||

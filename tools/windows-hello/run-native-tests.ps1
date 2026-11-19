@@ -45,6 +45,11 @@ $taskTests = @(
         Run = $true
     },
     @{
+        Name = 'TestVaultRecovery'
+        Sources = @('mail/app/hello/tests/TestVaultRecovery.cpp', 'mail/app/hello/EncryptedBlob.cpp', 'mail/app/hello/VaultSupport.cpp')
+        Run = $true
+    },
+    @{
         Name = 'VaultProbe'
         Sources = @('tools/windows-hello/VaultProbe.cpp', 'mail/app/WindowsHello.cpp', 'mail/app/hello/EncryptedBlob.cpp', 'mail/app/hello/VaultSupport.cpp', 'mail/app/hello/ProfileVault.cpp', 'mail/app/hello/RecoveryUI.cpp')
         Unicode = $true

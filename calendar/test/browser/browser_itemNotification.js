@@ -9,6 +9,11 @@ var CalAlarmMonitor = Cc["@mozilla.org/calendar/alarm-monitor;1"].getService(
   Ci.calIAlarmServiceObserver
 );
 
+add_setup(function () {
+  MockAlertsService.init();
+  registerCleanupFunction(() => MockAlertsService.cleanup());
+});
+
 add_task(async function () {
   const calendar = CalendarTestUtils.createCalendar();
   registerCleanupFunction(() => {
@@ -23,7 +28,6 @@ add_task(async function () {
   event.endDate.hour++;
   calendar.addItem(event);
 
-  MockAlertsService.init();
   const shownPromise = MockAlertsService.promiseShown();
 
   // Fire the notification. Do this directly in CalAlarmMonitor instead of

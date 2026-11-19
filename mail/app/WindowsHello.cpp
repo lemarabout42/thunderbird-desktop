@@ -190,8 +190,8 @@ Result VerifyChallenge(NCRYPT_KEY_HANDLE key, const std::array<BYTE, 32>& hash,
   return {status, "Verify Windows Hello startup challenge"};
 }
 
-Result OpenVaultKey(const VaultId& id, bool create, CngHandle& provider,
-                    CngHandle& key) {
+Result OpenVaultKey(const VaultId& id, bool create,
+                    NCRYPT_PROV_HANDLE& provider, NCRYPT_KEY_HANDLE& key) {
   std::wstring label = L"Vault-v2-";
   constexpr wchar_t digits[] = L"0123456789abcdef";
   for (BYTE byte : id) {
@@ -201,16 +201,17 @@ Result OpenVaultKey(const VaultId& id, bool create, CngHandle& provider,
   std::wstring name;
   auto result = KeyName(name, label);
   if (!result.Succeeded()) return result;
-  auto status =
-      NCryptOpenStorageProvider(&provider.value, kPassportProvider, 0);
+  auto status = NCryptOpenStorageProvider(&provider, kPassportProvider, 0);
   if (status != 0) return {status, "Open vault Passport provider"};
+  NCRYPT_KEY_HANDLE opened = 0;
   if (create) {
-    status = NCryptCreatePersistedKey(provider.value, &key.value,
-                                      BCRYPT_RSA_ALGORITHM, name.c_str(), 0, 0);
+    status = NCryptCreatePersistedKey(provider, &opened, BCRYPT_RSA_ALGORITHM,
+                                      name.c_str(), 0, 0);
   } else {
-    status = NCryptOpenKey(provider.value, &key.value, name.c_str(), 0, 0);
+    status = NCryptOpenKey(provider, &opened, name.c_str(), 0, 0);
   }
   if (status != 0) return {status, "Open vault protector"};
+  key = opened;
   for (const auto& setting :
        {std::pair{NCRYPT_LENGTH_PROPERTY, kRsaBits},
         std::pair{NCRYPT_KEY_USAGE_PROPERTY,
@@ -218,19 +219,19 @@ Result OpenVaultKey(const VaultId& id, bool create, CngHandle& provider,
         std::pair{NCRYPT_EXPORT_POLICY_PROPERTY, DWORD{0}},
         std::pair{static_cast<const wchar_t*>(kCachePolicy),
                   kAuthenticationMandatory}}) {
-    result = create ? SetDword(key.value, setting.first, setting.second)
-                    : RequireDword(key.value, setting.first, setting.second);
+    result = create ? SetDword(key, setting.first, setting.second)
+                    : RequireDword(key, setting.first, setting.second);
     if (!result.Succeeded()) return result;
   }
   if (create) {
     constexpr wchar_t message[] =
         L"Create the encrypted Thunderbird test profile";
     status = NCryptSetProperty(
-        key.value, NCRYPT_USE_CONTEXT_PROPERTY,
+        key, NCRYPT_USE_CONTEXT_PROPERTY,
         reinterpret_cast<PBYTE>(const_cast<wchar_t*>(message)), sizeof(message),
         0);
     if (status != 0) return {status, "Set vault enrollment context"};
-    status = NCryptFinalizeKey(key.value, 0);
+    status = NCryptFinalizeKey(key, 0);
     if (status != 0) return {status, "Enroll vault protector"};
     for (const auto& setting :
          {std::pair{NCRYPT_LENGTH_PROPERTY, kRsaBits},
@@ -240,7 +241,7 @@ Result OpenVaultKey(const VaultId& id, bool create, CngHandle& provider,
           std::pair{NCRYPT_EXPORT_POLICY_PROPERTY, DWORD{0}},
           std::pair{static_cast<const wchar_t*>(kCachePolicy),
                     kAuthenticationMandatory}}) {
-      result = RequireDword(key.value, setting.first, setting.second);
+      result = RequireDword(key, setting.first, setting.second);
       if (!result.Succeeded()) return result;
     }
   }
@@ -326,18 +327,29 @@ Result AuthenticateStartup() {
   return result;
 }
 
+PendingVaultProtector::~PendingVaultProtector() {
+  // NCryptDeleteKey releases the key handle when deletion succeeds.
+  if (mKey && (mCommitted ||
+               NCryptDeleteKey(mKey, NCRYPT_SILENT_FLAG) != ERROR_SUCCESS)) {
+    NCryptFreeObject(mKey);
+  }
+  if (mProvider) NCryptFreeObject(mProvider);
+}
+
 Result CreateVaultProtector(const VaultId& id, const vault::SecretKey& secret,
-                            std::vector<BYTE>& wrapped) {
+                            std::vector<BYTE>& wrapped,
+                            PendingVaultProtector& pending) {
   wrapped.clear();
   if (!secret.IsValid()) return {NTE_BAD_DATA, "Invalid vault secret"};
-  CngHandle provider;
-  CngHandle key;
-  auto result = OpenVaultKey(id, true, provider, key);
+  if (pending.mProvider || pending.mCommitted)
+    return {NTE_BAD_KEY_STATE, "Vault enrollment already started"};
+  auto result = OpenVaultKey(id, true, pending.mProvider, pending.mKey);
   if (!result.Succeeded()) return result;
+  const auto key = pending.mKey;
   std::array<BYTE, 1024> publicBlob{};
   DWORD size = 0;
   auto status = NCryptExportKey(
-      key.value, 0, BCRYPT_RSAPUBLIC_BLOB, nullptr, publicBlob.data(),
+      key, 0, BCRYPT_RSAPUBLIC_BLOB, nullptr, publicBlob.data(),
       static_cast<DWORD>(publicBlob.size()), &size, NCRYPT_SILENT_FLAG);
   if (status != 0 || size > publicBlob.size() ||
       size < sizeof(BCRYPT_RSAKEY_BLOB))
@@ -370,7 +382,7 @@ Result CreateVaultProtector(const VaultId& id, const vault::SecretKey& secret,
   }
   std::array<BYTE, 32> digest{};
   result = VaultDigest(id, wrapped, digest);
-  if (result.Succeeded()) result = SetDword(key.value, kRequireGesture, 1);
+  if (result.Succeeded()) result = SetDword(key, kRequireGesture, 1);
   if (!result.Succeeded()) {
     wrapped.clear();
     return result;
@@ -382,7 +394,7 @@ Result CreateVaultProtector(const VaultId& id, const vault::SecretKey& secret,
   DWORD signedSize = 0;
   BCRYPT_PKCS1_PADDING_INFO padding{BCRYPT_SHA256_ALGORITHM};
   status = NCryptSignHash(
-      key.value, &padding, digest.data(), static_cast<DWORD>(digest.size()),
+      key, &padding, digest.data(), static_cast<DWORD>(digest.size()),
       wrapped.data() + 256, 256, &signedSize, NCRYPT_PAD_PKCS1_FLAG);
   SecureZeroMemory(digest.data(), digest.size());
   if (status == 0 && signedSize != 256) status = NTE_BAD_SIGNATURE;
@@ -396,7 +408,7 @@ Result UnlockVaultSecret(const VaultId& id, const std::vector<BYTE>& wrapped,
   if (wrapped.size() != 512) return {NTE_BAD_DATA, "Invalid vault envelope"};
   CngHandle provider;
   CngHandle key;
-  auto result = OpenVaultKey(id, false, provider, key);
+  auto result = OpenVaultKey(id, false, provider.value, key.value);
   if (!result.Succeeded()) return result;
   std::array<BYTE, 32> digest{};
   result = VaultDigest(id, wrapped, digest);

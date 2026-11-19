@@ -818,9 +818,12 @@ pref("mail.biff.show_tray_icon_always", false);
 pref("mail.biff.animate_dock_icon", false);
 #endif
 
+#ifdef MOZ_THUNDERBIRD_HELLO_LOCK
+// Windows can retain native alerts after a crash withdraws the encrypted profile.
+pref("mail.biff.use_system_alert", false, locked);
+pref("alerts.useSystemBackend", false, locked);
+#elifndef XP_MACOSX
 // Use native OS notifications for Linux and Windows by default.
-// macOS only uses native notifications and it can't be changed.
-#ifndef XP_MACOSX
 pref("mail.biff.use_system_alert", true);
 #endif
 

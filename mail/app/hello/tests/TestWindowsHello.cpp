@@ -30,9 +30,11 @@ struct Scenario {
   SECURITY_STATUS createStatus = ERROR_SUCCESS;
   SECURITY_STATUS finalizeStatus = ERROR_SUCCESS;
   SECURITY_STATUS signStatus = ERROR_SUCCESS;
+  SECURITY_STATUS decryptStatus = ERROR_SUCCESS;
   SECURITY_STATUS verifyStatus = ERROR_SUCCESS;
   SECURITY_STATUS getStatus = ERROR_SUCCESS;
   SECURITY_STATUS exportStatus = ERROR_SUCCESS;
+  SECURITY_STATUS deleteStatus = ERROR_SUCCESS;
   NTSTATUS algorithmStatus = 0;
   NTSTATUS importStatus = 0;
   bool shortPublicKey = false;
@@ -41,10 +43,14 @@ struct Scenario {
   bool shortSignature = false;
   bool gesture = false;
   bool context = false;
+  bool vault = false;
+  DWORD decryptedSize = 32;
+  int decryptCalls = 0;
   int signCalls = 0;
   int verifyCalls = 0;
   int createCalls = 0;
   int freeCalls = 0;
+  int deleteCalls = 0;
 } state;
 
 SECURITY_STATUS
@@ -58,7 +64,8 @@ FakeOpenProvider(NCRYPT_PROV_HANDLE* out, LPCWSTR name, DWORD) {
 SECURITY_STATUS
 FakeOpenKey(NCRYPT_PROV_HANDLE, NCRYPT_KEY_HANDLE* out, LPCWSTR name, DWORD,
             DWORD flags) {
-  CHECK(std::wcsstr(name, L"//ThunderbirdHello//Startup-v1"));
+  CHECK(std::wcsstr(name, state.vault ? L"//ThunderbirdHello//Vault-v2-"
+                                      : L"//ThunderbirdHello//Startup-v1"));
   CHECK(flags == 0);  // Opening silently can suppress the later Hello prompt.
   if (state.openStatus == ERROR_SUCCESS) {
     *out = 2;
@@ -104,6 +111,7 @@ FakeGet(NCRYPT_HANDLE, LPCWSTR property, PBYTE bytes, DWORD length,
     value = 2048;
   } else if (std::wcscmp(property, NCRYPT_KEY_USAGE_PROPERTY) == 0) {
     value = NCRYPT_ALLOW_SIGNING_FLAG;
+    if (state.vault) value |= NCRYPT_ALLOW_DECRYPT_FLAG;
   } else if (std::wcscmp(property, L"NgcCacheType") == 0) {
     value = 1;
   }
@@ -138,6 +146,8 @@ FakeExport(NCRYPT_KEY_HANDLE, NCRYPT_KEY_HANDLE, LPCWSTR type,
 }
 NTSTATUS
 FakeOpenAlgorithm(BCRYPT_ALG_HANDLE* out, LPCWSTR algorithm, LPCWSTR, ULONG) {
+  if (std::wcscmp(algorithm, BCRYPT_SHA256_ALGORITHM) == 0)
+    return BCryptOpenAlgorithmProvider(out, algorithm, nullptr, 0);
   CHECK(std::wcscmp(algorithm, BCRYPT_RSA_ALGORITHM) == 0);
   *out = reinterpret_cast<BCRYPT_ALG_HANDLE>(3);
   return state.algorithmStatus;
@@ -148,6 +158,16 @@ FakeImport(BCRYPT_ALG_HANDLE, BCRYPT_KEY_HANDLE, LPCWSTR type,
   CHECK(std::wcscmp(type, BCRYPT_RSAPUBLIC_BLOB) == 0);
   *out = reinterpret_cast<BCRYPT_KEY_HANDLE>(4);
   return state.importStatus;
+}
+
+NTSTATUS FakeEncrypt(BCRYPT_KEY_HANDLE key, PUCHAR, ULONG length, VOID*, PUCHAR,
+                     ULONG, PUCHAR output, ULONG capacity, ULONG* written,
+                     ULONG flags) {
+  CHECK(key == reinterpret_cast<BCRYPT_KEY_HANDLE>(4));
+  CHECK(length == 32 && capacity == 256 && flags == BCRYPT_PAD_PKCS1);
+  std::memset(output, 0xC3, capacity);
+  *written = capacity;
+  return 0;
 }
 NTSTATUS
 FakeVerify(BCRYPT_KEY_HANDLE, VOID*, PUCHAR, ULONG, PUCHAR, ULONG,
@@ -163,14 +183,33 @@ FakeDestroy(BCRYPT_KEY_HANDLE key) {
 }
 NTSTATUS
 FakeCloseAlgorithm(BCRYPT_ALG_HANDLE algorithm, ULONG) {
-  CHECK(algorithm == reinterpret_cast<BCRYPT_ALG_HANDLE>(3));
-  return 0;
+  return algorithm == reinterpret_cast<BCRYPT_ALG_HANDLE>(3)
+             ? 0
+             : BCryptCloseAlgorithmProvider(algorithm, 0);
+}
+SECURITY_STATUS FakeDecrypt(NCRYPT_KEY_HANDLE, PBYTE, DWORD size, VOID*,
+                            PBYTE out, DWORD capacity, DWORD* written,
+                            DWORD flags) {
+  CHECK(state.context && state.gesture && state.verifyCalls == 1);
+  CHECK(flags == NCRYPT_PAD_PKCS1_FLAG && size == 256 && capacity >= 32);
+  ++state.decryptCalls;
+  if (state.decryptStatus == ERROR_SUCCESS) {
+    std::memset(out, 0x5A, state.decryptedSize);
+    *written = state.decryptedSize;
+  }
+  return state.decryptStatus;
 }
 SECURITY_STATUS
 FakeFree(NCRYPT_HANDLE handle) {
   CHECK(handle == 1 || handle == 2);
   ++state.freeCalls;
   return ERROR_SUCCESS;
+}
+
+SECURITY_STATUS FakeDelete(NCRYPT_KEY_HANDLE key, DWORD flags) {
+  CHECK(key == 2 && flags == NCRYPT_SILENT_FLAG);
+  ++state.deleteCalls;
+  return state.deleteStatus;
 }
 NTSTATUS
 FakeRandom(BCRYPT_ALG_HANDLE algorithm, PUCHAR bytes, ULONG length,
@@ -191,11 +230,14 @@ FakeRandom(BCRYPT_ALG_HANDLE algorithm, PUCHAR bytes, ULONG length,
 #define NCryptSetProperty FakeSet
 #define NCryptGetProperty FakeGet
 #define NCryptSignHash FakeSign
+#define NCryptDecrypt FakeDecrypt
 #define NCryptExportKey FakeExport
 #define NCryptFreeObject FakeFree
+#define NCryptDeleteKey FakeDelete
 #define BCryptGenRandom FakeRandom
 #define BCryptOpenAlgorithmProvider FakeOpenAlgorithm
 #define BCryptImportKeyPair FakeImport
+#define BCryptEncrypt FakeEncrypt
 #define BCryptVerifySignature FakeVerify
 #define BCryptDestroyKey FakeDestroy
 #define BCryptCloseAlgorithmProvider FakeCloseAlgorithm
@@ -292,4 +334,98 @@ int main() {
   CHECK(!AuthenticateStartup().Succeeded());
   CHECK(state.verifyCalls == 0);
   std::puts("Windows Hello startup: 28 scenarios passed (mock OS boundary).");
+
+  using thunderbird::hello::UnlockVaultSecret;
+  const thunderbird::hello::VaultId protector{};
+  const std::vector<BYTE> envelope(512, 0xC3);
+  thunderbird::vault::SecretKey secret;
+  state = {};
+  state.vault = true;
+  CHECK(UnlockVaultSecret(protector, envelope, secret).Succeeded());
+  CHECK(state.decryptCalls == 1 && secret.IsValid() &&
+        secret.Bytes()[0] == 0x5A);
+  CHECK(state.deleteCalls == 0);
+
+  state = {};
+  state.vault = true;
+  state.verifyStatus = NTE_BAD_SIGNATURE;
+  CHECK(!UnlockVaultSecret(protector, envelope, secret).Succeeded());
+  CHECK(state.decryptCalls == 0 && !secret.IsValid());
+  state = {};
+  state.vault = true;
+  state.failedSet = L"PinCacheIsGestureRequired";
+  CHECK(!UnlockVaultSecret(protector, envelope, secret).Succeeded());
+  CHECK(state.decryptCalls == 0 && !secret.IsValid());
+  state = {};
+  state.vault = true;
+  state.badPolicy = NCRYPT_EXPORT_POLICY_PROPERTY;
+  CHECK(!UnlockVaultSecret(protector, envelope, secret).Succeeded());
+  CHECK(state.verifyCalls == 0 && state.decryptCalls == 0 && !secret.IsValid());
+  state = {};
+  state.vault = true;
+  state.decryptStatus = NTE_USER_CANCELLED;
+  CHECK(UnlockVaultSecret(protector, envelope, secret).status ==
+        NTE_USER_CANCELLED);
+  CHECK(state.decryptCalls == 1 && !secret.IsValid());
+  state = {};
+  state.vault = true;
+  state.decryptedSize = 31;
+  CHECK(!UnlockVaultSecret(protector, envelope, secret).Succeeded());
+  CHECK(state.decryptCalls == 1 && !secret.IsValid());
+  std::puts(
+      "Vault unlock: verified signature, policy, gesture, cancellation "
+      "and secret length.");
+
+  using thunderbird::hello::CreateVaultProtector;
+  using thunderbird::hello::PendingVaultProtector;
+  const std::array<BYTE, 32> syntheticSecret{};
+  CHECK(secret.Import(syntheticSecret.data(), syntheticSecret.size()));
+  std::vector<BYTE> wrapped;
+  for (bool committed : {false, true}) {
+    state = {};
+    state.vault = true;
+    {
+      PendingVaultProtector pending;
+      CHECK(CreateVaultProtector(protector, secret, wrapped, pending)
+                .Succeeded());
+      CHECK(wrapped.size() == 512 && state.deleteCalls == 0);
+      if (committed) pending.Commit();
+    }
+    CHECK(state.deleteCalls == (committed ? 0 : 1));
+    CHECK(state.freeCalls == (committed ? 2 : 1));
+  }
+
+  for (auto failure : {&Scenario::finalizeStatus, &Scenario::exportStatus,
+                       &Scenario::signStatus}) {
+    state = {};
+    state.vault = true;
+    state.*failure = NTE_USER_CANCELLED;
+    {
+      PendingVaultProtector pending;
+      CHECK(CreateVaultProtector(protector, secret, wrapped, pending).status ==
+            NTE_USER_CANCELLED);
+    }
+    CHECK(wrapped.empty() && state.deleteCalls == 1 && state.freeCalls == 1);
+  }
+
+  state = {};
+  state.vault = true;
+  state.createStatus = NTE_EXISTS;
+  {
+    PendingVaultProtector pending;
+    CHECK(CreateVaultProtector(protector, secret, wrapped, pending).status ==
+          NTE_EXISTS);
+  }
+  CHECK(state.deleteCalls == 0 && state.freeCalls == 1);
+  state = {};
+  state.vault = true;
+  state.deleteStatus = NTE_PERM;
+  {
+    PendingVaultProtector pending;
+    CHECK(
+        CreateVaultProtector(protector, secret, wrapped, pending).Succeeded());
+  }
+  CHECK(state.deleteCalls == 1 && state.freeCalls == 2);
+  std::puts(
+      "Vault protector transaction: enrollment, commit and rollback passed.");
 }

@@ -1,8 +1,8 @@
 # Windows Hello et coffre de profil
 
 Ce fork Windows expérimental ouvre un **profil de test complet dans un système
-de fichiers chiffré**. Le code du coffre est intégré au point d'entrée de
-Thunderbird ; la compilation complète et sa validation restent en cours.
+de fichiers chiffré**. Le processus parent de Thunderbird ouvre le coffre
+avant de démarrer Gecko.
 La primitive AES-GCM du premier prototype ne sert pas au stockage du profil.
 
 Base Thunderbird : `ada7ac0ab6ee12982315d628bb0c6f55b19b0096`.
@@ -18,19 +18,26 @@ indépendant du nouveau coffre.
 - Installer `vault-runtime/Dokan_x64.msi` en suivant son assistant et la demande
   Windows d'autorisation administrateur. Redémarrer si l'assistant le demande.
   Le script de préparation ne procède pas à cette installation.
-- Garder le dossier `vault-runtime` à côté de `thunderbird.exe`.
-- Libérer la lettre **Z:** et fermer toute autre instance de cppcryptfs.
+- Garder le dossier `vault-runtime` à côté de `thunderbird.exe` et extraire le
+  paquet dans un chemin court. Le contrôle Authenticode du contrôleur exige
+  un chemin complet inférieur à `MAX_PATH` (260 caractères).
+- Libérer la lettre **Z:** et fermer toute autre instance de cppcryptfs dans la
+  même session Windows.
 - Le premier démarrage crée un coffre séparé sous
   `%LOCALAPPDATA%\ThunderbirdHello\TestProfile-v2\vault`. Plusieurs validations
   Hello peuvent être nécessaires pour créer la protection et l'ouvrir.
-- Conserver les 64 caractères de récupération sur papier ou dans un lieu sûr
-  hors de ce PC, puis les saisir pour vérifier la copie. Cette clé ouvre le
-  coffre sans Hello. L'application ne l'enregistre pas automatiquement en clair.
+- Recopier les deux lignes de 32 caractères sur papier ou dans un lieu sûr
+  hors de ce PC, puis saisir les 64 caractères à la suite pour vérifier la
+  copie. L'écran de sauvegarde affiche la clé sans commande de copie vers le
+  presse-papiers Windows. Cette clé ouvre le coffre sans Hello. L'application
+  ne l'enregistre pas automatiquement en clair.
   Une copie en clair ou une capture de cette clé sur le même PC permettrait
   de contourner la protection du coffre : n'en conserver aucune.
 - Les lancements suivants demandent Hello avant d'ouvrir le profil. Une
-  annulation ferme le programme. Fermer Thunderbird retire le lecteur Z: ; si
-  une application garde un fichier ouvert, la fermeture demande de le libérer.
+  annulation ferme le programme. Avant de quitter Thunderbird, enregistrez
+  et fermez les fichiers ouverts depuis le lecteur Z: dans les autres
+  applications. Le coffre se ferme après un délai de démontage même si une
+  autre application garde un fichier ouvert.
 
 Aucun profil Thunderbird existant n'est migré. Commencer avec des données de
 test ; les paramètres et messages d'un autre profil ne sont pas modifiés.
@@ -78,13 +85,22 @@ d'attestation et ne garantit donc pas à lui seul la présence d'un TPM.
 `ProfileVaultSession` est ouvert par le processus parent de `thunderbird.exe`
 après l'installation du blocage des DLL et avant XPCOM. Le coffre est créé dans
 un répertoire transactionnel, puis renommé une fois la récupération confirmée.
-Un verrou de fichier empêche deux sessions d'ouvrir le même coffre.
+Le marqueur d'identité est écrit dans le volume provisoire avant la publication
+du coffre. Les ouvertures ultérieures exigent ce marqueur. Un verrou de fichier
+empêche deux sessions d'ouvrir le même coffre.
 
-Les exécutables du moteur et leur DLL sont vérifiés par SHA-256 avant tout
-transfert de secret. L'application refuse une instance cppcryptfs préexistante,
-crée la sienne suspendue, l'attache à un job Windows avec terminaison à la
-fermeture, puis vérifie l'identité du serveur du canal nommé et sa disponibilité.
-Le moteur interdit les autres sessions et les services pour ce montage.
+Thunderbird vérifie les empreintes SHA-256 des deux exécutables et de leur DLL
+et garde ouverts les fichiers vérifiés ainsi que leurs répertoires parents.
+Il contrôle le chemin de l'image effectivement chargée pendant que chaque
+processus est encore suspendu. Il attache son moteur à un job Windows avec
+terminaison à la fermeture et vérifie le propriétaire du canal nommé.
+Au montage, Windows doit valider la signature Authenticode du contrôleur
+épinglé. Le contrôleur authentifie le signataire du serveur sur sa propre
+connexion. Thunderbird interrompt le contrôleur si son moteur s'arrête
+pendant la commande.
+Avant d'utiliser un montage, il exige que le moteur confirme le mode direct,
+AES-256-GCM pour les contenus, AES-256-EME pour les noms, ainsi que le refus
+d'accès aux autres sessions et aux services Windows.
 
 Le profil itinérant et le profil local sont tous deux fixés à `Z:\Profile` ;
 `TEMP` et `TMP` pointent vers `Z:\Temp`. Les variables de redémarrage Gecko
@@ -93,18 +109,25 @@ permettant de changer de profil, de lancer une autre application XUL ou une
 tâche d'arrière-plan sont refusés par cette version de test.
 
 Après l'arrêt de Gecko et la libération du profil, le lecteur est démonté.
+Si le démontage normal reste bloqué, la fermeture arrête le moteur qui
+appartient à Thunderbird pour retirer le lecteur.
 La fermeture brutale du parent ferme son job et termine uniquement son moteur,
-ce qui fait retirer le lecteur par Dokan. Cette protection limite l'exposition
-du montage après un crash ; elle ne remplace pas les sauvegardes et ne garantit
-pas que la dernière écriture survive à une coupure de courant.
+ce qui fait retirer le lecteur par Dokan. Si le moteur s'arrête pendant que
+Gecko utilise le profil, Thunderbird interrompt le processus pour limiter les
+écritures vers une lettre de lecteur réattribuée. Une coupure de courant peut
+interrompre la dernière écriture. Les sauvegardes restent nécessaires.
 
 Une clé Passport manquante n'est jamais remplacée silencieusement. La
 récupération demande le code conservé hors du PC et crée un nouveau protecteur.
 Le code doit d'abord réussir à monter le système de fichiers et à lire son
 identifiant interne chiffré. Ce n'est qu'après cette vérification que
-`hello.key` est remplacé de façon atomique. Le secret du système de fichiers
-et les messages restent les mêmes. Sans Hello utilisable **et** sans code de
-récupération, le fork n'offre pas de moyen de retrouver les données.
+`hello.key` est remplacé de façon atomique. Lors d'un échec de publication,
+Thunderbird demande au fournisseur Passport de supprimer la nouvelle clé.
+Si seul l'identifiant public du coffre est endommagé, un déverrouillage Hello
+valide permet de le rétablir
+depuis le marqueur chiffré, avec le protecteur existant. Sans Hello utilisable
+**et** sans code de récupération, le fork n'offre pas de moyen de retrouver
+les données.
 
 ## Périmètre de protection
 
@@ -115,6 +138,7 @@ récupération, le fork n'offre pas de moyen de retrouver les données.
 | Processus enfants | Démarrage IPC habituel, pas de nouvelle demande Hello |
 | Autre programme, coffre fermé | Fichiers chiffrés, sans clé de montage |
 | Autre programme de la même session, coffre ouvert | Accès possible au lecteur en clair |
+| Notifications de courrier et alertes du profil | Affichage interne à Thunderbird, sans dépôt des aperçus dans le centre de notifications Windows |
 | Mise en veille, verrouillage Windows, inactivité | Pas de fermeture automatique du coffre |
 | Updater et crash reporter | Désactivés dans la configuration de test |
 | Export ou pièce jointe enregistrée ailleurs par l'utilisateur | Hors du coffre |
@@ -134,11 +158,25 @@ prépare les dépendances officielles épinglées, contrôle leur SHA-256 et leu
 signature Authenticode, et joint licences et provenance. Il ne modifie pas
 la configuration de sécurité Windows et n'installe pas le pilote.
 
+Suivre les [versions](https://github.com/dokan-dev/dokany/releases) et
+[avis de sécurité](https://github.com/dokan-dev/dokany/security/advisories)
+de Dokany. Lors d'une mise à jour, épingler ensemble le MSI et la DLL x64
+de la nouvelle version officielle, contrôler les empreintes et signatures,
+puis valider la création, la réouverture et le démontage d'un coffre de test.
+Le pilote se met à jour séparément avec le MSI. Au 18 novembre 2026,
+la version stable publiée reste la 2.3.1.1000. Le
+[ticket Dokany 1335](https://github.com/dokan-dev/dokany/issues/1335) signale
+un arrêt système sur cette version.
+
 La compilation se fait dans la racine Gecko avec `comm/` lié à ce dépôt,
 `ac_add_options --enable-application=comm/mail` et les outils Mozilla pour
 Windows. L'option Hello est activée par défaut sur Windows. Une compilation
 sans coffre s'obtient par `ac_add_options --disable-windows-hello-lock`.
-Le paquet de test doit inclure le runtime à côté de l'exécutable.
+Pour un ZIP autonome, ajouter `ac_add_options --with-redist` au mozconfig.
+On peut aussi passer à `--with-redist` le chemin du répertoire redistribuable
+MSVC x64 fourni par Visual Studio. Après la compilation, `mach package` met
+les DLL Microsoft et le dossier `vault-runtime` à côté de `thunderbird.exe`.
+Extraire le ZIP en entier avant de lancer Thunderbird.
 
 Les tests natifs s'exécutent avec
 `tools/windows-hello/run-native-tests.ps1` depuis un environnement Visual Studio,
@@ -199,6 +237,12 @@ Validation effectuée au 18 novembre 2026 :
 - Configurations complètes avec et sans coffre : génération des deux backends
   réussie. `config.status` et `backend.mk` confirment que la définition et les
   sources Hello sont présentes dans le premier cas et absentes dans le second.
+
+Après les correctifs issus de la première analyse Codex Security, un coffre
+factice a été créé avec le moteur cppcryptfs livré. Le message témoin a été
+relu après fermeture et réouverture du coffre. Un second volume configuré
+avec des noms de fichiers en clair a été refusé. Pour ces nouveaux essais, le
+facteur Hello et la confirmation de la clé de récupération ont été simulés.
 
 `VaultProbe` peut écrire une clé de récupération de **profil factice** dans un
 fichier explicitement fourni par son opérateur, uniquement pour les essais

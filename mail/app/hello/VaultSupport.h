@@ -8,7 +8,9 @@
 #include <windows.h>
 
 #include <array>
+#include <initializer_list>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "../WindowsHello.h"
@@ -22,6 +24,12 @@ class Handle {
   ~Handle() { Reset(); }
   Handle(const Handle&) = delete;
   Handle& operator=(const Handle&) = delete;
+  Handle(Handle&& other) noexcept
+      : value(std::exchange(other.value, nullptr)) {}
+  Handle& operator=(Handle&& other) noexcept {
+    if (this != &other) Reset(std::exchange(other.value, nullptr));
+    return *this;
+  }
   void Reset(HANDLE next = nullptr) {
     if (value && value != INVALID_HANDLE_VALUE) CloseHandle(value);
     value = next;
@@ -52,7 +60,17 @@ bool IsProfileOverride(const char* argument);
 bool ReadSmallFile(const std::wstring& path, size_t limit,
                    std::vector<BYTE>& bytes);
 bool WriteNewFile(const std::wstring& path, const BYTE* bytes, size_t size);
-bool VerifySha256(const std::wstring& path, const char* expected);
+struct RuntimeFile {
+  const wchar_t* name;
+  const char* sha256;
+};
+
+// Use launchDirectory for every helper launch while pins holds the verified
+// files and their directory chain open.
+bool PinVerifiedRuntime(const std::wstring& directory,
+                        std::initializer_list<RuntimeFile> files,
+                        std::wstring& launchDirectory,
+                        std::vector<Handle>& pins);
 bool PrivateDirectory(const std::wstring& path);
 
 // Launches an explicit executable. The secret is inherited only through stdin,
@@ -61,8 +79,28 @@ bool PrivateDirectory(const std::wstring& path);
 DWORD RunCommand(const std::wstring& executable,
                  const std::vector<std::wstring>& arguments,
                  const SecretKey* secret = nullptr, DWORD timeoutMs = 60000);
+DWORD RunVerifiedMount(const std::wstring& controller, const std::wstring& data,
+                       const std::wstring& drive, const SecretKey& secret,
+                       HANDLE engine);
+bool VerifyMountedPolicy(const std::wstring& executable,
+                         const std::wstring& drive);
+bool IsEngineInSession(const wchar_t* imageName, DWORD processId,
+                       DWORD session);
 bool StartOwnedEngine(const std::wstring& executable, Handle& job,
                       Handle& process);
+
+class EngineWatch {
+ public:
+  EngineWatch() = default;
+  ~EngineWatch() { Stop(); }
+  EngineWatch(const EngineWatch&) = delete;
+  EngineWatch& operator=(const EngineWatch&) = delete;
+  bool Start(HANDLE engine);
+  void Stop();
+
+ private:
+  PTP_WAIT mWait = nullptr;
+};
 
 }  // namespace thunderbird::vault
 

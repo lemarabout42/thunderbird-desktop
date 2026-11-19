@@ -6,6 +6,7 @@
 #define mail_app_WindowsHello_h
 
 #include <windows.h>
+#include <ncrypt.h>
 
 #include <array>
 #include <vector>
@@ -26,12 +27,33 @@ Result AuthenticateStartup();
 
 using VaultId = std::array<BYTE, 16>;
 
+class PendingVaultProtector {
+ public:
+  PendingVaultProtector() = default;
+  ~PendingVaultProtector();
+  PendingVaultProtector(const PendingVaultProtector&) = delete;
+  PendingVaultProtector& operator=(const PendingVaultProtector&) = delete;
+
+  // Retain the key once its envelope has been published.
+  void Commit() { mCommitted = true; }
+
+ private:
+  friend Result CreateVaultProtector(const VaultId&, const vault::SecretKey&,
+                                     std::vector<BYTE>&,
+                                     PendingVaultProtector&);
+
+  NCRYPT_PROV_HANDLE mProvider = 0;
+  NCRYPT_KEY_HANDLE mKey = 0;
+  bool mCommitted = false;
+};
+
 // A vault protector is separate from the replaceable startup signing key.
 // Creation never overwrites a persisted key. Unlock never creates a missing
 // key. The ciphertext is signed to prevent substitution through public-key
 // encryption; its signature is checked before every private decryption.
 Result CreateVaultProtector(const VaultId& id, const vault::SecretKey& secret,
-                            std::vector<BYTE>& wrapped);
+                            std::vector<BYTE>& wrapped,
+                            PendingVaultProtector& pending);
 Result UnlockVaultSecret(const VaultId& id, const std::vector<BYTE>& wrapped,
                          vault::SecretKey& secret, bool silentProbe = false);
 
