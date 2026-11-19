@@ -109,6 +109,25 @@ add_task(async () => {
   );
 }).skip(AppConstants.platform == "macosx");
 
+add_task(async function test_systemNotificationAvailability() {
+  await SpecialPowers.pushPrefEnv({ set: [["mail.biff.show_alert", true]] });
+  const { prefsDocument, prefsWindow } = await openNewPrefsTab(
+    "paneGeneral",
+    "incomingMailCategory"
+  );
+  const showAlert = prefsDocument.getElementById("newMailNotificationAlert");
+  const systemAlert = prefsDocument.getElementById(
+    "useSystemNotificationAlert"
+  );
+  const isLocked = Services.prefs.prefIsLocked("mail.biff.use_system_alert");
+  Assert.equal(systemAlert.disabled, isLocked, "Respect the system alert lock");
+  EventUtils.synthesizeMouseAtCenter(showAlert, {}, prefsWindow);
+  Assert.ok(systemAlert.disabled, "Disabling mail alerts disables the backend");
+  EventUtils.synthesizeMouseAtCenter(showAlert, {}, prefsWindow);
+  Assert.equal(systemAlert.disabled, isLocked, "Restore the permitted backend");
+  await closePrefsTab();
+}).skip(AppConstants.platform == "macosx");
+
 add_task(async () => {
   await SpecialPowers.pushPrefEnv({
     set: [["mail.biff.play_sound", true]],

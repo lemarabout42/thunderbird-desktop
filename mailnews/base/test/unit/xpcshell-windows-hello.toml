@@ -1,0 +1,8 @@
+[DEFAULT]
+head = ""
+prefs = [
+  "alerts.useSystemBackend=true",
+  "mail.biff.use_system_alert=true",
+]
+
+["test_vaultNotifications.js"]

@@ -32,6 +32,10 @@
 #  include "mozilla/WindowsDllBlocklist.h"
 #  include "mozilla/WindowsDpiInitialization.h"
 
+#  ifdef MOZ_THUNDERBIRD_HELLO_LOCK
+#    include "hello/ProfileVault.h"
+#  endif
+
 #  define XRE_WANT_ENVIRON
 #  include "nsWindowsWMain.cpp"
 
@@ -422,6 +426,43 @@ int main(int argc, char* argv[], char* envp[]) {
   // it's now parent-only, as child processes either don't need it, or by
   // the time they do the sandbox already guarantees PreferSystem32Images.
   ::LoadLibraryExW(L"cryptbase.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+
+#  ifdef MOZ_THUNDERBIRD_HELLO_LOCK
+  for (int i = 1; i < argc; ++i) {
+    if (thunderbird::vault::IsProfileOverride(argv[i])) {
+      Output(
+          "Cette version de test utilise uniquement son profil chiffré "
+          "séparé. Les options de profil et d'application externe ne "
+          "sont pas disponibles.");
+      return 1;
+    }
+  }
+  // Child processes have returned above. The parent obtains the real storage
+  // secret through Hello, mounts the vault, and selects that profile before
+  // XPCOM or any command-line handler can access mail. No plaintext fallback.
+  thunderbird::vault::ProfileVaultSession profileVault;
+  const auto helloResult = profileVault.Open();
+  if (!helloResult.Succeeded() || !profileVault.PrepareArguments(argc, argv) ||
+      !profileVault.WatchEngine()) {
+    if (helloResult.status == ERROR_SERVICE_DOES_NOT_EXIST) {
+      Output(
+          "Le coffre nécessite le pilote Dokan fourni avec le paquet de "
+          "test. Installez vault-runtime/Dokan_x64.msi puis relancez "
+          "Thunderbird.");
+    } else if (helloResult.status == ERROR_ALREADY_ASSIGNED) {
+      Output(
+          "Le lecteur Z: est déjà occupé. Libérez-le avant de lancer ce "
+          "profil de test chiffré.");
+    } else if (helloResult.status != NTE_USER_CANCELLED &&
+               helloResult.status != ERROR_CANCELLED) {
+      Output(
+          "Le coffre n'a pas pu être ouvert. Vérifiez Windows Hello, les "
+          "composants du paquet de test et qu'aucune autre instance du "
+          "coffre n'est ouverte. Aucun profil en clair ne sera utilisé.");
+    }
+    return 1;
+  }
+#  endif
 #endif
 
   nsresult rv = InitXPCOMGlue(LibLoadingStrategy::NoReadAhead);
@@ -449,6 +490,11 @@ int main(int argc, char* argv[], char* envp[]) {
 #endif
 
   gBootstrap.reset();
+
+#if defined(XP_WIN) && defined(MOZ_THUNDERBIRD_HELLO_LOCK)
+  // Release Gecko and all profile handles before withdrawing the filesystem.
+  profileVault.Close();
+#endif
 
   return result;
 }

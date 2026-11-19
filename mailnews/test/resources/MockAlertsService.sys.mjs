@@ -3,17 +3,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { Assert } from "resource://testing-common/Assert.sys.mjs";
+import { MockRegistrar } from "resource://testing-common/MockRegistrar.sys.mjs";
+import { PrefUtils } from "moz-src:///toolkit/modules/PrefUtils.sys.mjs";
 
-const registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
-const contractID = "@mozilla.org/system-alerts-service;1";
-let oldClassID;
-const newClassID = Services.uuid.generateUUID();
-const factory = {
-  QueryInterface: ChromeUtils.generateQI(["nsIFactory"]),
-  createInstance(iid) {
-    return new MockAlertsServiceInstance().QueryInterface(iid);
-  },
-};
+const mailSystemAlertPref = "mail.biff.use_system_alert";
+const mockIDs = [];
+let savedMailSystemAlert;
 
 export const MockAlertsService = {
   /**
@@ -45,19 +40,44 @@ export const MockAlertsService = {
   _closedDeferred: null,
 
   /**
-   * Register the mock alerts service with XPCOM.
+   * Route notifications to the mock until cleanup restores the services and
+   * preference lock.
    */
   init() {
-    oldClassID = registrar.contractIDToCID(contractID);
-    registrar.registerFactory(newClassID, "", contractID, factory);
+    const mock = new MockAlertsServiceInstance();
+    mockIDs.push(
+      MockRegistrar.register("@mozilla.org/system-alerts-service;1", mock)
+    );
+    if (Services.prefs.prefIsLocked("alerts.useSystemBackend")) {
+      mockIDs.push(
+        MockRegistrar.register("@mozilla.org/alerts-service;1", mock)
+      );
+    }
+
+    // Route new mail to the mock while the Windows service is replaced.
+    if (Services.prefs.prefIsLocked(mailSystemAlertPref)) {
+      Services.prefs.unlockPref(mailSystemAlertPref);
+      savedMailSystemAlert = PrefUtils.getPrefStrict(
+        mailSystemAlertPref,
+        "user"
+      );
+      Services.prefs.setBoolPref(mailSystemAlertPref, true);
+    }
   },
 
   /**
    * Unregister the mock alerts service with XPCOM.
    */
   cleanup() {
-    registrar.unregisterFactory(newClassID, factory);
-    registrar.registerFactory(oldClassID, "", contractID, null);
+    if (savedMailSystemAlert !== undefined) {
+      PrefUtils.setPref(mailSystemAlertPref, savedMailSystemAlert);
+      Services.prefs.lockPref(mailSystemAlertPref);
+      savedMailSystemAlert = undefined;
+    }
+    for (const id of mockIDs) {
+      MockRegistrar.unregister(id);
+    }
+    mockIDs.length = 0;
     this.reset();
   },
 

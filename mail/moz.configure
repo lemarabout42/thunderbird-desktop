@@ -5,6 +5,20 @@
 set_config("MOZ_THUNDERBIRD", True)
 set_define("MOZ_THUNDERBIRD", True)
 
+with only_when(target_is_windows):
+    option(
+        "--disable-windows-hello-lock",
+        help="Build without the experimental Windows Hello encrypted profile",
+    )
+
+    @depends("--enable-windows-hello-lock")
+    def windows_hello_lock(value):
+        if value:
+            return True
+
+    set_config("MOZ_THUNDERBIRD_HELLO_LOCK", windows_hello_lock)
+    set_define("MOZ_THUNDERBIRD_HELLO_LOCK", windows_hello_lock)
+
 imply_option("MOZ_APP_NAME", "thunderbird")
 
 set_config("MOZ_APPUPDATE_HOST", "aus.thunderbird.net")
